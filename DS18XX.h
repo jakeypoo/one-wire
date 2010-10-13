@@ -65,7 +65,7 @@ void ow_set_bus(volatile uint8_t* in,
 #define OW_OCRA     OCR0A
 
 void ow_timer_init();
-//initialize and make sure all is okay
+//init2ialize and make sure all is okay
 
 void ow_timer_set(uint8_t prescaler, uint8_t compare_match_value);
 // Use 8 bit timer, settings as follows
@@ -85,6 +85,7 @@ void ow_timer_set(uint8_t prescaler, uint8_t compare_match_value);
 
 //---------------------------------------------------
 uint8_t ow_reset();
+//use 
 //pull low for 480us to reset devices
 //return 1 if no presence pulse detected
 //else 0 if all okay
@@ -96,6 +97,7 @@ uint8_t ow_reset();
 
 uint8_t ow_search_roms(uint8_t n, uint8_t ee_store[]);
 //execute SEARCH_ROM -> store memory in EEPROM @ ee_store
+//if n = 1 use READ_ROM command 
 //if n > 1 : search again, if rom is unique -> store to next EEPROM address
 //if n > 2 ...
 //needs to call crc on ROM values
@@ -127,10 +129,14 @@ uint8_t ow_read_scratchpad(uint8_t* r_byte);
 //return 0 if successful, 1 otherwise
 
 //---------------------------------------------------
-float ow_read_temp(uint64_t ROM_code);
+float ow_ds18xx_convert_temp(uint16_t raw_temp);
+// take the temperature, write it out in deg C accurate to resolution of device 
+
+//---------------------------------------------------
+float ow_read_temp();
 // reset pulse + wait for presence pulse
 // ow_write(MATCH_ROM);
-// for byte in rom_code(ow_write byte)
+// for byte in rom_code(&ow_write byte) //figure out how to point to EEPROM
 // uint64_t = ow_read_scratchpad() - should handle CRC on it's own, reread if bad
 // return ds18xx_convert_temp()
 
