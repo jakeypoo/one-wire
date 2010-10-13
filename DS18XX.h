@@ -56,13 +56,18 @@ void ow_set_bus(volatile uint8_t* in,
 }
 
 //---------------------------------------------------
-// One-Wire timer set macros
-volatile uint8_t* OW_TIMER;
+// One-Wire timer set macros (use any 8 bit timer)
 
-void ow_timer_set
+// this uses timer/counter 0
+#define OW_TCCRA    TCCR0A
+#define OW_TCCRB    TCCR0B
+#define OW_TCNT     TCNT0
+#define OW_OCRA     OCR0A
 
-//---------------------------------------------------
-void ow_timer_init(uint8_t prescaler, uint8_t compare_match_value);
+void ow_timer_init();
+//initialize and make sure all is okay
+
+void ow_timer_set(uint8_t prescaler, uint8_t compare_match_value);
 // Use 8 bit timer, settings as follows
 // Assuming F_OSC = 16000000UL (16MHz)
 // Normal operation:
@@ -85,7 +90,16 @@ uint8_t ow_reset();
 //else 0 if all okay
 
 //---------------------------------------------------
+#ifndef NUMBER_OF_SENSORS
+#define NUMBER_OF_SENSORS        1
+#endif
 
+uint8_t ow_search_roms(uint8_t n, uint8_t ee_store[]);
+//execute SEARCH_ROM -> store memory in EEPROM @ ee_store
+//if n > 1 : search again, if rom is unique -> store to next EEPROM address
+//if n > 2 ...
+//needs to call crc on ROM values
+//return 0 if all sensors found, 1 if error
 
 //---------------------------------------------------
 void ow_write_byte(uint8_t ow_command);
@@ -107,7 +121,13 @@ uint8_t ow_read_byte();
 // return read_byte;
 
 //---------------------------------------------------
-float read_temp(uint64_t ROM_code);
+uint8_t ow_read_scratchpad(uint8_t* r_byte);
+//use pointer and write 8 bits at a time, avoids having to alloc two 64-bit blocks of RAM
+//use (r_byte++)* = ow_read_byte(), check sd card stuff for syntax
+//return 0 if successful, 1 otherwise
+
+//---------------------------------------------------
+float ow_read_temp(uint64_t ROM_code);
 // reset pulse + wait for presence pulse
 // ow_write(MATCH_ROM);
 // for byte in rom_code(ow_write byte)
