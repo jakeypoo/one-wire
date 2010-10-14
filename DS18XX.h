@@ -58,27 +58,71 @@ void ow_set_bus(volatile uint8_t* in,
 //---------------------------------------------------
 // One-Wire timer set macros (use any 8 bit timer)
 
+#ifndef OW_TIMER
+#define OW_TIMER 0
+#endif
+
+//add more support for different xtals as it occurs
+#ifndef F_OSC
+#define F_OSC 16000000UL
+#endif
+
+
+#if OW_TIMER == 2
+// this uses timer/counter 2
+#define OW_TCCRA    TCCR2A
+#define OW_TCCRB    TCCR2B
+#define OW_TCNT     TCNT2
+#define OW_OCRA     OCR2A
+
+#else
 // this uses timer/counter 0
 #define OW_TCCRA    TCCR0A
 #define OW_TCCRB    TCCR0B
 #define OW_TCNT     TCNT0
 #define OW_OCRA     OCR0A
+#endif
 
-void ow_timer_init();
-//init2ialize and make sure all is okay
+#define OW_RESET_T (uint8_t)(420/((1000000UL*64)/F_OSC)) //480 us reset pulse
+#define OW_1US_T (uint8_t)(1/((1000000UL*8)/F_OSC)) // 1 us delay for init read or pull-up settle time
+#define OW_WRITE_SLOT_T (uint8_t)(60/((1000000UL*8)/F_OSC)) //60 us timer for write slot
+#define OW_READ_SLOT_T (uint8_t)(60/((1000000UL*8)/F_OSC)) //60 us timer for read slot
 
-void ow_timer_set(uint8_t prescaler, uint8_t compare_match_value);
-// Use 8 bit timer, settings as follows
-// Assuming F_OSC = 16000000UL (16MHz)
-// Normal operation:
-//   TCCR0A = 0x02; /* turn off compare match output modules, set to
-//                   set to clear on compare register match */
-//   TCCR0B = 0x02; /* use clock-source F_OSC/8 : t_clk = 0.5us */
-// Reset Pulse:
-//   TCCR0B = 0x03 /* clock-source F_OSC/64 : t_clk = 4us */
-// Wait 10ms for conversions:
-//   use delay library? or not...
-// 
+
+//stop the timer and reset, let another macro start it up when it's ready
+#define OW_TIMER_STOP \
+          OW_TCCRB = 0x00;\
+          OW_TCNT = 0x00
+
+//stop the timer and keep the last output compare match value, let another macro start it up when it's ready
+//***should only be used if the prescaler remains unchanged***
+#define OW_TIMER_SPLIT \
+          OW_TCCRB = 0x00;\
+          OW_TCNT = OW_OCRA
+// turn off compare match output modules, set to set to clear(overflow) on compare register match, clock-source F_OSC/64 : t_clk = 4us
+#define OW_TIMER_RESET_PULSE \
+		  OW_TCCRA = 0x02; \
+          OW_OCRA = OW_RESET_T \
+		  OW_TCCRB = 0x03
+
+// turn off compare match output modules, set to set to clear(overflow) on compare register match, use clock-source F_OSC/8 : t_clk = 0.5us
+#define OW_TIMER_1US_DELAY \
+          OW_TCCRA = 0x02; \
+          OW_OCRA = OW_1US_T \
+          OW_TCCRB = 0x02
+#define OW_TIMER_WRITE_SLOT \
+          OW_TCCRA = 0x02; \
+          OW_OCRA = OW_WRITE_SLOT_T \
+          OW_TCCRB = 0x02
+#define OW_TIMER_READ_SLOT \
+          OW_TCCRA = 0x02; \
+          OW_OCRA = OW_READ_SLOT_T \
+          OW_TCCRB = 0x02
+
+#define OW_TIMER_SLEEP
+
+#define OW_TIMER_WAIT
+
 // this funct should be called to reset the clock for each communication
 // if prescaller != 0, set the prescaler and reset the timer, else leave the clock running
 // if compare value is set, update the value as well, if 0 turn it off
@@ -91,6 +135,10 @@ uint8_t ow_reset();
 //else 0 if all okay
 
 //---------------------------------------------------
+uint8_t ow_compute_crc(uint8_t r_byte[], uint8_t num_bytes);
+//pass 
+
+//---------------------------------------------------
 #ifndef NUMBER_OF_SENSORS
 #define NUMBER_OF_SENSORS        1
 #endif
@@ -100,7 +148,9 @@ uint8_t ow_search_roms(uint8_t n, uint8_t ee_store[]);
 //if n = 1 use READ_ROM command 
 //if n > 1 : search again, if rom is unique -> store to next EEPROM address
 //if n > 2 ...
-//needs to call crc on ROM values
+//feed read bytes into 7x8bit array and seperate read_crc
+//needs to check crc(7x8bit array) == readcrc
+//then store in EEPROM is unique and crc checks out
 //return 0 if all sensors found, 1 if error
 
 //---------------------------------------------------
