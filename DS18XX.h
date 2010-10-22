@@ -3,8 +3,13 @@
  *
  * ToDos: -many, many things
  *        -consider splitting into seperate .c and .h
- *        -add posibility for the read/write routines to be interruptable
+ *        -set up interrupt servidce routines 
+ *        -set up periodical temp check on other timer?
+ *        -set up CRC function
+ *        -set up wdt to prevent hangups, need a special routine for handling WDT resets?
+ *  
  */
+
 
 #include <avr/interrupt.h>
 
@@ -59,7 +64,7 @@ volatile uint8_t ow_flags = 0x00;
 #define OW_TOV  0
 #define OW_OCF  1
 #define OW_RESET_FLAG 2
-
+#define OW_READ_FLAG 3
 
 #define OW_GET_FLAG(x) ((ow_flags>>x) & 0x01)
 #define OW_SET_FLAG(x) ow_flags |= ((uint8_t)  (1<<x))
@@ -206,7 +211,9 @@ uint8_t ow_search_roms(uint8_t n, uint8_t ee_store[]);
 
 //---------------------------------------------------
 void ow_write_byte(uint8_t put_byte){
-    
+    for(unit8_t bit = 8; bit > 0; bit--){
+        
+    } 
 }
 
 //start 8 bit loop
@@ -223,16 +230,17 @@ void ow_write_byte(uint8_t put_byte){
 uint8_t ow_read_byte(){
     uint8_t read_byte = 0x00;
     uint8_t read_bit = 1;
-    for(unit8_t bit = 8; bit > 0; bit--){
+    for(unit8_t bit = 0; bit < 8; bit--){
         OW_OUT_LOW();
         OW_DIR_OUT(); //pull line low
         OW_TIMER_1US_DELAY();
         OW_WAIT_UNTIL_SET(OW_TOV);
         OW_DIR_IN();  //let go of the line
+        OW_SET_FLAG(OW_READ_FLAG); //make sure ISR(OCR_OV) clears this flag
         OW_TIMER_READ_SLOT();
         while(!OW_GET_FLAG(OW_OCF))
             read_bit = OW_GET_IN();
-        read_byte = readbyte<<1 | read_bit;
+        read_byte = readbyte | read_bit<<bit;
         OW_WAIT_UNTIL_SET(OW_TOV);
         OW_CLR_FLAG(OW_OCF); 
     }
@@ -275,7 +283,7 @@ unit8_t ow_read_temp(uint8_t sensor_mask, float* store_temp[]){
     
     sensor_mask &= 0x0F;
     
-    if(sensor_mask == OW_ALL_SENSORS || sensor_mask != OW_SENSOR_1 || sensor_mask != OW_SENSOR_2 || sensor_mask != OW_SENSOR_3 || sensor_mask != OW_SENSOR_4)
+    if(sensor_mask == OW_ALL_SENSORS || sensor_mask != OW_SENSOR_1 && sensor_mask != OW_SENSOR_2 && sensor_mask != OW_SENSOR_3 && sensor_mask != OW_SENSOR_4)
         ow_write_byte(OW_SKIP_ROM);
     else
         ow_write_byte(OW_MATCH_ROM);
