@@ -6,6 +6,7 @@
  *        -set up interrupt servidce routines 
  *        -set up periodical temp check on other timer?
  *        -set up CRC function
+ *        -set up EEPROM adress alloc and access
  *        -set up wdt to prevent hangups, need a special routine for handling WDT resets?
  *  
  */
@@ -189,15 +190,63 @@ uint8_t ow_reset()
 }
 
 //---------------------------------------------------
-uint8_t ow_compute_crc(uint8_t r_byte[], uint8_t num_bytes);
-//figure out the 
+//returns 0 if read_crc matches the crc computed from r_byte[num_bytes] 
+
+uint8_t ow_compute_crc(uint8_t *r_byte, uint8_t num_bytes, uint8_t read_crc)
+{
+     uint8_t  crc;
+     uint16_t loop_count;
+     uint8_t  bit_counter;
+     uint8_t  b;
+     uint8_t  feedback_bit;
+
+     crc = 0x00;
+
+     for (loop_count = 0; loop_count < num_bytes; loop_count++)
+     {
+         b = *(r_byte+loop_count)
+
+         bit_counter = 8;
+         do {
+             feedback_bit = (crc ^ b) & 0x01;
+             if ( feedback_bit == 0x01 ) crc = crc ^ 0x18;
+             crc = (crc >> 1) & 0x7F;
+             if ( feedback_bit == 0x01 ) crc = crc | 0x80;
+             b = b >> 1;
+             bit_counter--;
+             } while (bit_counter > 0);
+    }
+    if(crc == read_crc) return 0;
+    return 1;  //bad crc value, try again
+}
 
 //---------------------------------------------------
 #ifndef NUMBER_OF_SENSORS
 #define NUMBER_OF_SENSORS        1
 #endif
 
-#define MAX_SENSORS              4    // 8 byte ROM code * MAX_SENSORS <= EEPROM size 
+
+
+     /*--         EEPROM TABLE          --*/
+#define EE_SENSOR_1_ROM     0x80 
+#define EE_SENSOR_2_ROM     0x88 
+#define EE_SENSOR_3_ROM     0x90 
+#define EE_SENSOR_4_ROM     0x98 
+#define EE_SENSOR_5_ROM     0xA0 
+#define EE_SENSOR_6_ROM     0xA8 
+#define EE_SENSOR_7_ROM     0xB0 
+#define EE_SENSOR_8_ROM     0xB8 
+
+uint8_t  rom_id_1   EEMEM   =   EE_SENSOR_1_ROM
+uint8_t  rom_id_2   EEMEM   =   EE_SENSOR_2_ROM
+uint8_t  rom_id_3   EEMEM   =   EE_SENSOR_3_ROM
+uint8_t  rom_id_4   EEMEM   =   EE_SENSOR_4_ROM
+uint8_t  rom_id_5   EEMEM   =   EE_SENSOR_5_ROM
+uint8_t  rom_id_6   EEMEM   =   EE_SENSOR_6_ROM
+uint8_t  rom_id_7   EEMEM   =   EE_SENSOR_7_ROM
+uint8_t  rom_id_8   EEMEM   =   EE_SENSOR_8_ROM
+
+//need indexed rom_id address access macros here...
 
 uint8_t ow_search_roms(uint8_t n, uint8_t ee_store[]);
 //execute SEARCH_ROM -> store memory in EEPROM @ ee_store
@@ -211,16 +260,20 @@ uint8_t ow_search_roms(uint8_t n, uint8_t ee_store[]);
 
 //---------------------------------------------------
 void ow_write_byte(uint8_t put_byte){
-    for(unit8_t bit = 8; bit > 0; bit--){
-        
+    for(unit8_t bit = 0; bit < 8; bit++){
+         OW_OUT_LOW();
+         OW_DIR_OUT(); //pull line low
+         OW_TIMER_1US_DELAY();
+         OW_WAIT_UNTIL_SET(OW_TOV); //pull low to init
+         if((put_byte >> bit) & 0x01) OW_OUT_HIGH(); //leave it low if writing a '0', else pull it up for a '1'
+         OW_TIMER_READ_SLOT();
+         OW_WAIT_UNTIL_SET(OW_TOV); // wait 60 us
+         OW_DIR_IN();
+         OW_TIMER_1US_DELAY();
+         OW_WAIT_UNTIL_SET(OW_TOV); //let go of the line for 1us recovery time before the next write
     } 
 }
 
-//start 8 bit loop
-//add pulldown 1us init
-//add hold nth bit for 60-120us
-//add 1 us (min) recovery time
-//loop back for next bit
 
 //---------------------------------------------------
 
@@ -248,24 +301,32 @@ uint8_t ow_read_byte(){
 }
 
 //---------------------------------------------------
+// passs the read conteent of the scatchpad to the pointer array, returns the crc value
+uint8_t ow_read_scratchpad(uint8_t *r_byte)
+{
+    uint8_t crc_byte;
 
-uint8_t ow_read_scratchpad(uint8_t* r_byte);
-//use pointer and write 8 bits at a time, avoids having to alloc two 64-bit blocks of RAM
-//use (r_byte++)* = ow_read_byte(), check sd card stuff for syntax
-//return 0 if successful, 1 otherwise
+    for(uint8_t byte_n = 0; byte_n < 8 ; byte++)
+    {
+        *(r_byte+byte_n) = ow_read_byte();
+    }
+    crc_byte = ow_read_byte();
+    return crc_byte;
+}
 
 //---------------------------------------------------
 
-float ow_ds18xx_convert_temp(uint16_t raw_temp){
+float ow_ds18xx_convert_temp(uint8_t *raw_temp)
+{
     // take the temperature, write it out in deg C accurate to resolution of device 
     // only accurate for DS1820 at the moment
     
-    if(raw_temp & 0xF000)
+    if(*(raw_temp+1))
         //number is negative
-        return (((1<<8)-(raw_temp & 0x00FF)) * (-0.5)) ;
+        return (((1<<8)-(*raw_temp & 0xFF)) * (-0.5)) ;
     else
-        return ((raw_temp & 0x00FF) * (-0.5)) ;
-
+        return ( (*raw_temp) * (0.5) );
+}
 //---------------------------------------------------
 
 #define OW_ALL_SENSORS    0x00
@@ -277,18 +338,23 @@ float ow_ds18xx_convert_temp(uint16_t raw_temp){
 //Read the temperature from specified sensors, returns 0 if successful, writes to a float array of size 4
 // Usage: ow_read_temp(OW_SENSOR_1|OW_SENSOR_3, &float_array[]) 
 
-unit8_t ow_read_temp(uint8_t sensor_mask, float* store_temp[]){ 
+unit8_t ow_read_temp(uint8_t sensor_mask, float *store_temp){ 
   //receive number of sensors to convert using the mask, return temps to pointer array 
-    while(!ow_reset()) ; //wait for reset to return without an error
+    uint8_t scratchpad_buffer[8];
+    uint8_t r_crc;
+
+    while(ow_reset()) ; //wait for reset to return without an error
     
     sensor_mask &= 0x0F;
     
     if(sensor_mask == OW_ALL_SENSORS || sensor_mask != OW_SENSOR_1 && sensor_mask != OW_SENSOR_2 && sensor_mask != OW_SENSOR_3 && sensor_mask != OW_SENSOR_4)
         ow_write_byte(OW_SKIP_ROM);
     else
+    {
         ow_write_byte(OW_MATCH_ROM);
         //write the ROM code stored in EEPROM
-    
+    }
+
     ow_write_byte(OW_CONVERT_T);
     
     OW_TIMER_WAIT();
@@ -308,8 +374,30 @@ unit8_t ow_read_temp(uint8_t sensor_mask, float* store_temp[]){
         OW_WAIT_UNTIL_SET(OW_TOV);
         OW_CLR_FLAG(OW_OCF); 
     }
-    //read the scratchpads one at a time, store a 0 in the array if the sensor was not called.
-}
+//read the scratchpads one at a time, store 999 in the array if the sensor was not called.
+    for(uint8_t sensor_num = 0; sensor_num< NUMBER_OF_SENSORS; sensor_num++)
+    {
+        if( (1<<sensor_num) & sensor_mask)
+        {
+            do{
+                while(ow_reset) ; //wait for a successful reset
+
+                ow_write_byte(OW_MATCH_ROM);
+
+                for(uint8_t rom_byte = 0; rom_byte<8; rom_byte++)
+                {
+                    ow_write_byte(/*eeprom get sensor_num(rom_byte)*/);
+                }
+
+                r_crc = ow_read_scratchpad(&scratchpad_buffer[0])
+            }
+            while(ow_compute_crc(&scratchpad_buffer[0], 8, r_crc));
+
+            *(store_temp+sensor_num) = ow_ds18xx_convert_temp(&scratchpad_buffer[0]);
+            } 
+        else      //store a 999 if the sensor is not being read
+            *(store_temp+sensor_num) = 999.0;
+    }
 
 
 
