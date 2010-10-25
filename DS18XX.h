@@ -228,6 +228,8 @@ uint8_t ow_compute_crc(uint8_t *r_byte, uint8_t num_bytes, uint8_t read_crc)
 
 
      /*--         EEPROM TABLE          --*/
+    /*   all addresses are not used directly   */
+   /*but I'll leave this here to declare alloaction*/
 #define EE_SENSOR_1_ROM     0x80 
 #define EE_SENSOR_2_ROM     0x88 
 #define EE_SENSOR_3_ROM     0x90 
@@ -246,7 +248,11 @@ uint8_t  rom_id_6   EEMEM   =   EE_SENSOR_6_ROM
 uint8_t  rom_id_7   EEMEM   =   EE_SENSOR_7_ROM
 uint8_t  rom_id_8   EEMEM   =   EE_SENSOR_8_ROM
 
-//need indexed rom_id address access macros here...
+//macros for EEPROM pointer access
+//    gets id byte from eeprom
+#define  GET_ROM_ID(sensor, byte)           eeprom_read_byte(&rom_id_1 + 8*sensor + byte)
+//    stores id byte in EEPROM
+#define  PUT_ROM_BYTE(sensor, byte, data)   eeprom_write_byte(&rom_id_1 + 8*sensor + byte, data)
 
 uint8_t ow_search_roms(uint8_t n, uint8_t ee_store[]);
 //execute SEARCH_ROM -> store memory in EEPROM @ ee_store
@@ -330,13 +336,10 @@ float ow_ds18xx_convert_temp(uint8_t *raw_temp)
 //---------------------------------------------------
 
 #define OW_ALL_SENSORS    0x00
-#define OW_SENSOR_1       1
-#define OW_SENSOR_2       (1<<1)
-#define OW_SENSOR_3       (1<<2)
-#define OW_SENSOR_4       (1<<3)
+#define OW_SENSOR(x)      (uint8_t)(1 << (x-1)
 
 //Read the temperature from specified sensors, returns 0 if successful, writes to a float array of size 4
-// Usage: ow_read_temp(OW_SENSOR_1|OW_SENSOR_3, &float_array[]) 
+// Usage: ow_read_temp(OW_SENSOR(1)|OW_SENSOR(3), &float_array[]) 
 
 unit8_t ow_read_temp(uint8_t sensor_mask, float *store_temp){ 
   //receive number of sensors to convert using the mask, return temps to pointer array 
@@ -347,12 +350,23 @@ unit8_t ow_read_temp(uint8_t sensor_mask, float *store_temp){
     
     sensor_mask &= 0x0F;
     
-    if(sensor_mask == OW_ALL_SENSORS || sensor_mask != OW_SENSOR_1 && sensor_mask != OW_SENSOR_2 && sensor_mask != OW_SENSOR_3 && sensor_mask != OW_SENSOR_4)
+    if(sensor_mask == OW_ALL_SENSORS || sensor_mask != OW_SENSOR(1) && sensor_mask != OW_SENSOR(2) && sensor_mask != OW_SENSOR(3) && sensor_mask != OW_SENSOR(4) && sensor_mask != OW_SENSOR(5) && sensor_mask != OW_SENSOR(6) && sensor_mask != OW_SENSOR(7) && sensor_mask != OW_SENSOR(8))
         ow_write_byte(OW_SKIP_ROM);
     else
     {
         ow_write_byte(OW_MATCH_ROM);
-        //write the ROM code stored in EEPROM
+        
+        for(uint8_t sensor_num = 0; sensor_num < 8; sensor_num++)
+        {
+            if((1<<sensor_num) & sensor_mask )
+            {
+                for(uint8_t rom_byte = 0; rom_byte<8; rom_byte++)
+                     {
+                          ow_write_byte(GET_ROM_ID((sensor_num + 1), rom_byte));
+                     }
+                sensor_num = 8;
+            }
+        }
     }
 
     ow_write_byte(OW_CONVERT_T);
@@ -386,7 +400,7 @@ unit8_t ow_read_temp(uint8_t sensor_mask, float *store_temp){
 
                 for(uint8_t rom_byte = 0; rom_byte<8; rom_byte++)
                 {
-                    ow_write_byte(/*eeprom get sensor_num(rom_byte)*/);
+                    ow_write_byte(GET_ROM_ID((sensor_num + 1), rom_byte));
                 }
 
                 r_crc = ow_read_scratchpad(&scratchpad_buffer[0])
