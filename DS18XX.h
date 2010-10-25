@@ -16,6 +16,7 @@
 
 
 //---------------------------------------------------
+   /*    DS1820 Command BYTES     */
 // ROM Command Definitions:
 #define OW_SEARCH_ROM          0xF0
 #define OW_READ_ROM            0x33
@@ -230,6 +231,7 @@ uint8_t ow_compute_crc(uint8_t *r_byte, uint8_t num_bytes, uint8_t read_crc)
      /*--         EEPROM TABLE          --*/
     /*   all addresses are not used directly   */
    /*but I'll leave this here to declare alloaction*/
+#define EE_SENSOR_ROM_F     0x7F
 #define EE_SENSOR_1_ROM     0x80 
 #define EE_SENSOR_2_ROM     0x88 
 #define EE_SENSOR_3_ROM     0x90 
@@ -239,22 +241,38 @@ uint8_t ow_compute_crc(uint8_t *r_byte, uint8_t num_bytes, uint8_t read_crc)
 #define EE_SENSOR_7_ROM     0xB0 
 #define EE_SENSOR_8_ROM     0xB8 
 
-uint8_t  rom_id_1   EEMEM   =   EE_SENSOR_1_ROM
-uint8_t  rom_id_2   EEMEM   =   EE_SENSOR_2_ROM
-uint8_t  rom_id_3   EEMEM   =   EE_SENSOR_3_ROM
-uint8_t  rom_id_4   EEMEM   =   EE_SENSOR_4_ROM
-uint8_t  rom_id_5   EEMEM   =   EE_SENSOR_5_ROM
-uint8_t  rom_id_6   EEMEM   =   EE_SENSOR_6_ROM
-uint8_t  rom_id_7   EEMEM   =   EE_SENSOR_7_ROM
-uint8_t  rom_id_8   EEMEM   =   EE_SENSOR_8_ROM
+uint8_t  rom_flags  EEMEM   =   EE_SENSOR_ROM_F; //if set, there is NO ROM ID stored for this sensor
+uint8_t  rom_id_1   EEMEM   =   EE_SENSOR_1_ROM;
+uint8_t  rom_id_2   EEMEM   =   EE_SENSOR_2_ROM;
+uint8_t  rom_id_3   EEMEM   =   EE_SENSOR_3_ROM;
+uint8_t  rom_id_4   EEMEM   =   EE_SENSOR_4_ROM;
+uint8_t  rom_id_5   EEMEM   =   EE_SENSOR_5_ROM;
+uint8_t  rom_id_6   EEMEM   =   EE_SENSOR_6_ROM;
+uint8_t  rom_id_7   EEMEM   =   EE_SENSOR_7_ROM;
+uint8_t  rom_id_8   EEMEM   =   EE_SENSOR_8_ROM;
 
 //macros for EEPROM pointer access
 //    gets id byte from eeprom
-#define  GET_ROM_ID(sensor, byte)           eeprom_read_byte(&rom_id_1 + 8*sensor + byte)
+#define  GET_ROM_ID(sensor, byte)           eeprom_read_byte(&rom_id_1 + 8*(sensor-1) + byte)
 //    stores id byte in EEPROM
-#define  PUT_ROM_BYTE(sensor, byte, data)   eeprom_write_byte(&rom_id_1 + 8*sensor + byte, data)
+#define  PUT_ROM_BYTE(sensor, byte, data)   eeprom_write_byte(&rom_id_1 + 8*(sensor-1) + byte, data)
 
-uint8_t ow_search_roms(uint8_t n, uint8_t ee_store[]);
+uint8_t ow_search_roms(uint8_t n, uint8_t ee_store[])
+{
+    uint8_t sensors_found = eeprom_read_byte(&rom_flags);
+
+    sensors_found = 0xFF; //reset the flags, no sensors found
+
+    eeprom_update_byte(&rom_flags, sensors_found);
+
+    while( !( sensors_found & (1<<NUMBER_OF_SENSORS) ) ) 
+    {  
+
+    while(ow_reset()) ; 	
+   
+    }
+    
+}
 //execute SEARCH_ROM -> store memory in EEPROM @ ee_store
 //if n = 1 use READ_ROM command 
 //if n > 1 : search again, if rom is unique -> store to next EEPROM address
@@ -374,7 +392,7 @@ unit8_t ow_read_temp(uint8_t sensor_mask, float *store_temp){
     OW_TIMER_WAIT();
     OW_WAIT_UNTIL_SET(OW_TOV);
 
-    uint8_t done_yet = 0;
+    uint8_t done_yet = 0;	
     while(!done_yet) //poll devices to see if done
     {
         OW_OUT_LOW();
@@ -412,6 +430,6 @@ unit8_t ow_read_temp(uint8_t sensor_mask, float *store_temp){
         else      //store a 999 if the sensor is not being read
             *(store_temp+sensor_num) = 999.0;
     }
-
+}
 
 
